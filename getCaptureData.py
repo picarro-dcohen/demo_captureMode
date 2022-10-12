@@ -44,7 +44,7 @@ class captureData:
         try:
             last = array[0]
         except IndexError:
-            print(f"No {self.looking_for} found")
+            print(f"  No {self.looking_for} found")
             return
         for i in array:
             if last+1 != i:
@@ -58,7 +58,6 @@ class captureData:
         try:
             last = array[0]
         except IndexError:
-            print(f"No {self.looking_for} found")
             return
         for i in array[1:]:
             if last+1 != i:
@@ -78,7 +77,7 @@ class captureData:
         try:
             return list(zip(firsts,lasts))
         except:
-            if debug: print(f"Did not find any {self.looking_for}")
+            #if self.debug: print(f"Did not find any {self.looking_for}")
             return
         
     def get_holding_indices(self):
@@ -102,15 +101,27 @@ class captureData:
         output = self.get_first_last_indices(9)
         self.transitioning = output
 
+    def get_triggered_indices(self):
+        '''
+        gets the first and last indicies of all triggered indicies
+        triggered is defined where:
+            self.feature = peak_detector_state --> 3
+        '''
+        self.looking_for = "triggered"
+        output = self.get_first_last_indices(3)
+        self.triggered = output
+
     def pair_transition_holding(self):
+        trig = self.triggered
         T = self.transitioning #list of first/last indicides 
         H = self.holding
         if self.debug:
             try: 
+                print(f"  Found {len(trig)} triggered states ")
                 print(f"  Found {len(T)} transitoning states ")
-                print(f"  and {len(H)} holding states")
+                print(f"  Found {len(H)} holding states")
             except:
-                print("Found No transition or holding states.")
+                print("Found No transition or holding pairs.")
                 return
         if H is None or T is None:
             return
@@ -121,32 +132,46 @@ class captureData:
             target -= 1
             for ii, j in enumerate(T):
                 if j[1] == target:
+                    temp["triggered"] = trig[i]
                     temp["transition"] = T[ii]
                     temp ["holding"] = H[i]
                     #TODO: add appropriate timestamp temp[time] = 
                     self.successful_captures.append(temp)
+
+    def pair_triggered_transition(self):
+        pass
+
+
     
     def get_conc_means(self, start, end):
         output = self.df[start:end][self.labels].mean()
         return output
     
     def generate_one_output(self, event):
+        trigStart,trigEnd =event['triggered']
         tStart, tEnd = event['transition']
         hStart, hEnd = event['holding']
+        triggered = self.get_conc_means(trigStart,tEnd)
         transition = self.get_conc_means(tStart, tEnd)
         holding = self.get_conc_means(hStart,hEnd)
 
         tdf = pd.DataFrame(index=self.labels)
         tdf.insert(0, "Name", list(map(self.parse_name,self.labels)))
-        tdf.insert(1, "Transition", transition)
-        tdf.insert(2, "Holding", holding)
-        tdf.insert(3, "Relative", holding-transition)
+        tdf.insert(1, "Triggered", triggered)
+        tdf.insert(2, "Transition", transition)
+        tdf.insert(3, "Holding", holding)
+        tdf.insert(4, "Relative", holding-triggered)
         return tdf
 
     def generate_one_meta(self, event):
-        indicies = ['transition','holding']
+        indicies = ['triggered','transition','holding']
         columns = ['start_time','end_time', 'duration','start_index','end_index','N']
         tdf = pd.DataFrame(index=indicies, columns=columns)
+        tdf.loc['triggered']['start_time'] = self.df.iloc[event['triggered'][0]]['time']
+        tdf.loc['triggered']['end_time'] = self.df.iloc[event['triggered'][1]]['time']
+        tdf.loc['triggered']['duration'] = tdf.loc['triggered']['end_time'] - tdf.loc['triggered']['start_time']
+        tdf.loc['triggered']['start_index'] = event['triggered'][0]
+        tdf.loc['triggered']['end_index'] = event['triggered'][1]
         tdf.loc['transition']['start_time'] = self.df.iloc[event['transition'][0]]['time']
         tdf.loc['transition']['end_time'] = self.df.iloc[event['transition'][1]]['time']
         tdf.loc['transition']['duration'] = tdf.loc['transition']['end_time'] - tdf.loc['transition']['start_time']
@@ -183,6 +208,7 @@ class captureData:
         '''
         output = []
         meta = []
+        self.get_triggered_indices()
         self.get_holding_indices()
         self.get_transitioning_indices()
         self.pair_transition_holding()
