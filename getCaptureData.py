@@ -172,6 +172,7 @@ class captureData:
         tdf.loc['triggered']['duration'] = tdf.loc['triggered']['end_time'] - tdf.loc['triggered']['start_time']
         tdf.loc['triggered']['start_index'] = event['triggered'][0]
         tdf.loc['triggered']['end_index'] = event['triggered'][1]
+        tdf.loc['triggered']['N'] = event['triggered'][1] - event['triggered'][0]
         tdf.loc['transition']['start_time'] = self.df.iloc[event['transition'][0]]['time']
         tdf.loc['transition']['end_time'] = self.df.iloc[event['transition'][1]]['time']
         tdf.loc['transition']['duration'] = tdf.loc['transition']['end_time'] - tdf.loc['transition']['start_time']
