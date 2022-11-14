@@ -13,13 +13,14 @@ class captureData:
 
     def __init__(self,path,debug=False):
         self.debug = debug
-
+        self.path = path
         #path to private log
         self.df = self.path_to_df(path)
         if self.debug: print(f"loaded h5 file: {self.df.shape}")
         self.feature = 'peak_detector_state'
         self.successful_captures = []
         self.labels = self.get_gas_concs_labels()
+        
 
     def get_gas_concs_labels(self):
         cols = self.df.columns
@@ -32,6 +33,21 @@ class captureData:
         except:
             pass 
         return output
+    
+    def make_multiplier_mask(self):
+        multiplier = []
+        unit = []
+        cid_list = [int(cid.split('_')[-1]) for cid in self.labels]
+        for cid in cid_list:
+            if cid == 280 or cid == 297:
+                multiplier.append(1e6)
+                unit.append('ppm')
+            else:
+                multiplier.append(1e9)
+                unit.append('ppb')
+            
+        return multiplier, unit
+
 
     def path_to_df(self, path):
         temp =  h5py.File(path,'r')
@@ -84,7 +100,7 @@ class captureData:
         '''
         gets the first and last indicies of all holding indicies
         holding is defined where:
-            self.feature = peak_detector_state --> 10
+            self.feature = peak_detector_state == 10
         '''
         self.looking_for = "holding"
         output = self.get_first_last_indices(10)
@@ -95,7 +111,7 @@ class captureData:
         '''
         gets the first and last indicies of all transitioning indicies
         transitioning is defined where:
-            self.feature = peak_detector_state --> 9
+            self.feature = peak_detector_state == 9
         '''
         self.looking_for = "transitioning"
         output = self.get_first_last_indices(9)
@@ -105,7 +121,7 @@ class captureData:
         '''
         gets the first and last indicies of all triggered indicies
         triggered is defined where:
-            self.feature = peak_detector_state --> 3
+            self.feature = peak_detector_state == 3
         '''
         self.looking_for = "triggered"
         output = self.get_first_last_indices(3)
@@ -154,14 +170,20 @@ class captureData:
         triggered = self.get_conc_means(trigStart,tEnd)
         transition = self.get_conc_means(tStart, tEnd)
         holding = self.get_conc_means(hStart,hEnd)
+        multiplier, units = self.make_multiplier_mask()
 
         tdf = pd.DataFrame(index=self.labels)
         tdf.insert(0, "Name", list(map(self.parse_name,self.labels)))
-        tdf.insert(1, "Triggered", triggered)
-        tdf.insert(2, "Transition", transition)
-        tdf.insert(3, "Holding", holding)
-        tdf.insert(4, "Relative", holding-triggered)
+        tdf.insert(1, "Triggered", triggered*multiplier)
+        tdf.insert(2, "Transition", transition*multiplier)
+        tdf.insert(3, "Holding", holding*multiplier)
+        tdf.insert(4, "Relative", holding*multiplier)
+        tdf.insert(5, "Units", units)
+
+        tdf.round(decimals=4)
         return tdf
+
+
 
     def generate_one_meta(self, event):
         indicies = ['triggered','transition','holding']
@@ -173,12 +195,14 @@ class captureData:
         tdf.loc['triggered']['start_index'] = event['triggered'][0]
         tdf.loc['triggered']['end_index'] = event['triggered'][1]
         tdf.loc['triggered']['N'] = event['triggered'][1] - event['triggered'][0]
+
         tdf.loc['transition']['start_time'] = self.df.iloc[event['transition'][0]]['time']
         tdf.loc['transition']['end_time'] = self.df.iloc[event['transition'][1]]['time']
         tdf.loc['transition']['duration'] = tdf.loc['transition']['end_time'] - tdf.loc['transition']['start_time']
         tdf.loc['transition']['start_index'] = event['transition'][0]
         tdf.loc['transition']['end_index'] = event['transition'][1]
         tdf.loc['transition']['N'] = event['transition'][1] - event['transition'][0]
+        
         tdf.loc['holding']['start_time'] = self.df.iloc[event['holding'][0]]['time']
         tdf.loc['holding']['end_time'] = self.df.iloc[event['holding'][1]]['time']
         tdf.loc['holding']['duration'] = tdf.loc['holding']['end_time'] - tdf.loc['holding']['start_time']
@@ -207,8 +231,9 @@ class captureData:
         3. pairs each transition to holding -> a pair is a successful capture
         4. generates simple output table and metadata
         '''
-        output = []
+        
         meta = []
+        output = []
         self.get_triggered_indices()
         self.get_holding_indices()
         self.get_transitioning_indices()
@@ -218,6 +243,16 @@ class captureData:
             meta.append(self.generate_one_meta(e))
         if self.debug: print(f" Generated results for {len(output)} capture events")
         return meta, output
+
+    def save_outputs(self, data):
+        out_prefix = './output/'
+        out_suffix = self.path.split('/')[-1].split('.')[0]
+        for i, e in enumerate(data):
+            e.to_csv(out_prefix+out_suffix+"_"+str(i) )
+
+
+        
+
 
 
 if __name__== "__main__":
@@ -234,7 +269,8 @@ if __name__== "__main__":
             cap1 = cap.successful_captures[0]
         except:
             pass
-        cap.generate_outputs()
+        meta, data = cap.generate_outputs()
+        cap.save_outputs(data)
 
 
     
