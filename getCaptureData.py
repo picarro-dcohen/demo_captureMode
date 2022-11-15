@@ -42,11 +42,14 @@ class captureData:
             if cid == 280 or cid == 297:
                 multiplier.append(1e6)
                 unit.append('ppm')
+            elif cid == 962:
+                multiplier.append(1)
+                unit.append('-')
             else:
                 multiplier.append(1e9)
                 unit.append('ppb')
             
-        return multiplier, unit
+        return multiplier, unit, cid_list
 
 
     def path_to_df(self, path):
@@ -170,18 +173,31 @@ class captureData:
         triggered = self.get_conc_means(trigStart,tEnd)
         transition = self.get_conc_means(tStart, tEnd)
         holding = self.get_conc_means(hStart,hEnd)
-        multiplier, units = self.make_multiplier_mask()
+        multiplier, units, cid_list = self.make_multiplier_mask()
 
         tdf = pd.DataFrame(index=self.labels)
         tdf.insert(0, "Name", list(map(self.parse_name,self.labels)))
         tdf.insert(1, "Triggered", triggered*multiplier)
         tdf.insert(2, "Transition", transition*multiplier)
         tdf.insert(3, "Holding", holding*multiplier)
-        tdf.insert(4, "Relative", holding*multiplier)
+        relative = (holding-triggered)*multiplier
+        tdf.insert(4, "Relative", relative)
+        print(np.sum(triggered),triggered[4], triggered[-1]/np.sum(triggered))
         tdf.insert(5, "Units", units)
+        tdf = self.water_to_pct(tdf, triggered, transition, holding, relative)
 
-        tdf.round(decimals=4)
+        tdf = tdf.round(decimals=4)
         return tdf
+
+    def water_to_pct(self,tdf, triggered, transition, holding, relative):
+        old_row = tdf.loc['broadband_gasConcs_962']
+        tdf.at['broadband_gasConcs_962','Triggered'] = old_row['Triggered']/np.sum(triggered)
+        tdf.at['broadband_gasConcs_962','Transition'] = old_row['Transition']/np.sum(transition)
+        tdf.at['broadband_gasConcs_962','Holding'] = old_row['Holding']/np.sum(holding)
+        tdf.at['broadband_gasConcs_962','Relative'] = old_row['Relative']/np.sum(relative)
+        tdf.at['broadband_gasConcs_962','Units'] = 'percent' 
+        return tdf
+        
 
 
 
